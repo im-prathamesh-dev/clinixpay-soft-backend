@@ -4,26 +4,39 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
-@EnableWebSecurity // Optional, but good practice
+@EnableWebSecurity
 public class SecurityConfig {
 
+    /**
+     * Configures the security filter chain to allow public access to registration endpoints.
+     */
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // 1. Disable CSRF for non-browser API access
+                // Disable CSRF for stateless API
                 .csrf(AbstractHttpConfigurer::disable)
-                // 2. Configure Authorization
-                .authorizeHttpRequests(auth -> auth
-                        // Permit ALL access to the registration endpoint
-                        .requestMatchers("/api/register/user").permitAll()
-                        // Require authentication for any other path (default)
+
+                // Allow all requests to the /api/register/** path
+                .authorizeHttpRequests(authorize -> authorize
+                        .requestMatchers("/api/register/**").permitAll()
+
+                        // Require authentication for all other requests (good practice)
                         .anyRequest().authenticated()
                 );
 
         return http.build();
+    }
+
+    /**
+     * Provides the BCryptPasswordEncoder bean for hashing the login key.
+     */
+    @Bean
+    public BCryptPasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
     }
 }

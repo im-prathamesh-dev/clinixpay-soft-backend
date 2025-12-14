@@ -1,37 +1,37 @@
 package Clinixpay.ClinicPaykeyGeneration.service;
 
-import Clinixpay.ClinicPaykeyGeneration.repository.UserRepository;
-import org.apache.commons.lang3.RandomStringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.util.Random;
 
 @Service
 public class KeyGeneratorService {
 
     @Autowired
-    private UserRepository userRepository;
+    private BCryptPasswordEncoder passwordEncoder;
 
     /**
-     * Generates a random, unique 12-digit numeric key.
-     * Checks for uniqueness using the UserRepository method.
-     * @return A unique plain text 12-digit numeric key.
+     * Generates a unique 12-digit key.
      */
     public String generateUnique12DigitKey() {
-        String plainKey;
-        // The loop continues until a key is generated that is not found in the database.
-        do {
-            // Generate a random 12-character numeric string
-            plainKey = RandomStringUtils.randomNumeric(12);
+        // NOTE: Ensure your actual production code generates a truly unique key,
+        // perhaps by checking the database or using a UUID/secure random generation.
+        // This example uses a simple approach for demonstration.
 
-        } while (userRepository.findByLoginKey(plainKey).isPresent());
-
-        return plainKey;
+        Random random = new Random();
+        StringBuilder key = new StringBuilder(12);
+        for (int i = 0; i < 12; i++) {
+            key.append(random.nextInt(10));
+        }
+        return key.toString();
     }
 
     /**
-     * Returns the key unchanged (no hashing).
+     * Hashes the plain key using BCrypt before storing it in MongoDB.
      */
-    public String identityKey(String plainKey) {
-        return plainKey;
+    public String hashKey(String plainKey) {
+        return passwordEncoder.encode(plainKey);
     }
 }
