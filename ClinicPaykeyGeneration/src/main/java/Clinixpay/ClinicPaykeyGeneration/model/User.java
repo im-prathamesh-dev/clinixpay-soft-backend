@@ -1,7 +1,5 @@
 package Clinixpay.ClinicPaykeyGeneration.model;
 
-
-
 import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
@@ -17,19 +15,29 @@ public class User {
 
     private String fullName;
 
-    @Indexed(unique = true) // Ensures no two users share the same email
+    @Indexed(unique = true)
     private String email;
 
     private String mobileNumber;
 
     // --- Key Generation Fields ---
-    // Indexed for fast lookup to check key uniqueness
     @Indexed(unique = true)
-    private String loginKey;           // Stores the secure, hashed version of the 12-digit key
+    private String loginKey;           // Stores the HASHED key for verification
 
-    private KeyStatus keyStatus = KeyStatus.ACTIVE;
-    private LocalDateTime keyGenerationTime = LocalDateTime.now();
+    // *** NEW FIELD: Stores the plain key temporarily until payment is verified and email is sent. ***
+    // Must be set to null immediately after successful key delivery.
+    private String tempPlainLoginKey;
+    // ***************************
+
+    private KeyStatus keyStatus = KeyStatus.PENDING_PAYMENT; // Default is PENDING_PAYMENT
+    private LocalDateTime keyGenerationTime;
     private LocalDateTime keyExpiryTime;
+
+    // --- Payment Fields ---
+    private String selectedPlan;
+    private Long planAmountPaise; // Amount in the smallest currency unit (paise for INR)
+    private String razorpayOrderId; // ID received after creating the order
+    private String razorpayPaymentId; // ID received after successful payment
 
     private LocalDateTime registrationTime = LocalDateTime.now();
 }

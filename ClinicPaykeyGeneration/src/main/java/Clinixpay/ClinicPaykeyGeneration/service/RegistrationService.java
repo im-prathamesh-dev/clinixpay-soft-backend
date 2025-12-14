@@ -4,61 +4,153 @@ import Clinixpay.ClinicPaykeyGeneration.dto.RegistrationRequest;
 import Clinixpay.ClinicPaykeyGeneration.model.KeyStatus;
 import Clinixpay.ClinicPaykeyGeneration.model.User;
 import Clinixpay.ClinicPaykeyGeneration.repository.UserRepository;
+import com.razorpay.RazorpayException;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+import java.util.Map;
 
 @Service
 public class RegistrationService {
 
     @Autowired private UserRepository userRepository;
     @Autowired private KeyGeneratorService keyGeneratorService;
+    @Autowired private PaymentService paymentService;
     @Autowired private EmailService emailService;
 
-    @Value("${key.validity.days}")
-    private int keyValidityDays;
 
     /**
-     * Registers a new user, generates a unique 12-digit key, saves the user, and attempts to send the key via email.
-     * The user is saved to the database regardless of email failure.
-     * @param request The user data from the API request.
-     * @return The newly created User entity.
-     * @throws IllegalStateException if the user's email is already registered.
+     * Handles both Free Plan (direct activation) and Paid Plan (Razorpay Order creation).
+     * This is called by POST /api/register/initiate-payment
      */
-    public User registerUser(RegistrationRequest request) {
+    public User initiateRegistrationAndPayment(RegistrationRequest request) throws RazorpayException {
 
-        // 1. Check for existing user (prevents registration with duplicate email)
+        // 1. Check for existing user
         if (userRepository.findByEmail(request.getEmail()).isPresent()) {
             throw new IllegalStateException("User with email " + request.getEmail() + " is already registered.");
         }
 
-        // 2. Generate Unique Key
-        String plainLoginKey = keyGeneratorService.generateUnique12DigitKey();
+        // 2. Determine Plan Details
+        Long planAmountPaise = paymentService.getPlanAmountPaise(request.getPlanId());
+        String planName = paymentService.getPlanName(request.getPlanId());
+        boolean isFreePlan = planAmountPaise == 0L;
 
-        // 3. Build and Save User Entity
+        // 3. Generate and Hash Key
+        String plainLoginKey = keyGeneratorService.generateUnique12DigitKey();
+        String hashedLoginKey = keyGeneratorService.hashKey(plainLoginKey);
+
         User newUser = new User();
         newUser.setFullName(request.getFullName());
         newUser.setEmail(request.getEmail());
         newUser.setMobileNumber(request.getMobileNumber());
-        newUser.setLoginKey(plainLoginKey); // Storing the PLAIN KEY
-        newUser.setKeyStatus(KeyStatus.ACTIVE);
-        newUser.setKeyGenerationTime(LocalDateTime.now());
-        newUser.setKeyExpiryTime(LocalDateTime.now().plusDays(keyValidityDays));
+        newUser.setSelectedPlan(planName);
+        newUser.setPlanAmountPaise(planAmountPaise);
+        newUser.setLoginKey(hashedLoginKey); // Store the HASHED key
 
-        // *** Data Save: This should succeed and persist the user ***
-        User savedUser = userRepository.save(newUser);
+        // 4. Conditional logic for Free vs. Paid
+        if (isFreePlan) {
+            // FREE PLAN: Activate immediately and send email.
 
-        // 4. Email Key (Handle email failure gracefully)
-        try {
-            emailService.sendLoginKeyEmail(request.getEmail(), plainLoginKey);
-        } catch (Exception e) {
-            // Log the email failure, but DO NOT rethrow, so the database save is not rolled back.
-            // This is how the database save is protected from email failure.
-            System.err.println("ALERT: Email delivery failed for user " + request.getEmail() + ". Key was saved but not delivered. Error: " + e.getMessage());
-            // You might want to implement a retry mechanism here in a production environment.
+            Map.Entry<Long, ChronoUnit> validity = paymentService.getPlanValidityDuration(request.getPlanId());
+
+            newUser.setKeyStatus(KeyStatus.ACTIVE);
+            newUser.setKeyGenerationTime(LocalDateTime.now());
+            newUser.setKeyExpiryTime(LocalDateTime.now().plus(validity.getKey(), validity.getValue()));
+
+            User savedUser = userRepository.save(newUser);
+
+            // Send the success email immediately for the Free Plan (key is available)
+            try {
+                emailService.sendPaymentSuccessEmail(
+                        savedUser.getEmail(),
+                        savedUser.getFullName(),
+                        plainLoginKey, // SEND THE PLAIN KEY
+                        savedUser.getSelectedPlan(),
+                        savedUser.getPlanAmountPaise()
+                );
+            } catch (Exception e) {
+                System.err.println("ALERT: Free Plan Email failed for user " + savedUser.getEmail() + ". Error: " + e.getMessage());
+            }
+
+            return savedUser;
+
+        } else {
+            // PAID PLAN: Set PENDING_PAYMENT and create Razorpay Order.
+            newUser.setKeyStatus(KeyStatus.PENDING_PAYMENT);
+
+            // *** CRITICAL UPDATE: Store PLAIN key temporarily for post-payment email ***
+            newUser.setTempPlainLoginKey(plainLoginKey);
+
+            User savedUser = userRepository.save(newUser);
+
+            String razorpayOrderId = paymentService.createRazorpayOrder(planAmountPaise, savedUser.getId());
+            savedUser.setRazorpayOrderId(razorpayOrderId);
+
+            return userRepository.save(savedUser);
+        }
+    }
+
+
+    /**
+     * Finalizes user registration after successful payment verification.
+     * This is called by POST /api/register/verify-payment
+     */
+    public User completeRegistration(String userId, String paymentId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalStateException("User not found with ID: " + userId));
+
+        if (user.getKeyStatus() != KeyStatus.PENDING_PAYMENT) {
+            throw new IllegalStateException("User is not in PENDING_PAYMENT status.");
         }
 
-        return savedUser;
+        // 1. DETERMINE DYNAMIC EXPIRY for Paid Plans
+        // Logic to extract plan ID from plan name (e.g., "Basic Plan 1" -> 1)
+        int planId = 0;
+        try {
+            String name = user.getSelectedPlan();
+            // Assuming plan names end with a number preceded by a space
+            String idPart = name.substring(name.lastIndexOf(" ") + 1);
+            planId = Integer.parseInt(idPart);
+        } catch (Exception e) {
+            // Fallback for improperly formatted plan names
+            System.err.println("Warning: Could not parse plan ID from selectedPlan: " + user.getSelectedPlan());
+        }
+
+        Map.Entry<Long, ChronoUnit> validity = paymentService.getPlanValidityDuration(planId);
+        LocalDateTime expiryTime = LocalDateTime.now().plus(validity.getKey(), validity.getValue());
+
+        // --- Retrieve the plain key for the email BEFORE clearing it ---
+        String plainLoginKey = user.getTempPlainLoginKey();
+
+        // 2. Update User status, key validity, and payment details
+        user.setKeyStatus(KeyStatus.ACTIVE);
+        user.setKeyGenerationTime(LocalDateTime.now());
+        user.setKeyExpiryTime(expiryTime);
+        user.setRazorpayPaymentId(paymentId);
+
+        // *** CRITICAL UPDATE: Clear the temporary key for security ***
+        user.setTempPlainLoginKey(null);
+
+        User completedUser = userRepository.save(user); // Save the ACTIVATED user
+
+        // 3. Send the success email (now using the retrieved PLAIN key)
+        if (plainLoginKey != null) {
+            try {
+                emailService.sendPaymentSuccessEmail(
+                        completedUser.getEmail(),
+                        completedUser.getFullName(),
+                        plainLoginKey, // <--- SUCCESS: Sending the plain key!
+                        completedUser.getSelectedPlan(),
+                        completedUser.getPlanAmountPaise()
+                );
+            } catch (Exception e) {
+                System.err.println("ALERT: Paid Plan Success Email delivery failed for user " + completedUser.getEmail() + ". Error: " + e.getMessage());
+            }
+        } else {
+            System.err.println("CRITICAL ALERT: Plain Login Key missing for user " + completedUser.getEmail() + " after payment verification. Email NOT SENT.");
+        }
+
+        return completedUser;
     }
 }
