@@ -1,0 +1,53 @@
+# -----------------------------------------------------------------------
+# Spring Boot Configuration (MUST IGNORE)
+# -----------------------------------------------------------------------
+# Exclude the default location for application.properties (which contains secrets)
+/src/main/resources/application.properties
+/src/main/resources/application.yml
+
+# Exclude any profile-specific property files that may contain local secrets
+application-local.properties
+application-local.yml
+.env
+
+# -----------------------------------------------------------------------
+# Build Output Directories (Maven & Gradle)
+# -----------------------------------------------------------------------
+# Maven compiled files
+/target/
+# Gradle compiled files
+/build/
+
+# Package files
+*.jar
+*.war
+*.zip
+*.tar.gz
+
+# -----------------------------------------------------------------------
+# IDE Files
+# -----------------------------------------------------------------------
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# VS Code
+.vscode/
+
+# Eclipse
+.classpath
+.project
+.settings/
+
+# -----------------------------------------------------------------------
+# Logs and System Files
+# -----------------------------------------------------------------------
+# Logs
+*.log
+log/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
