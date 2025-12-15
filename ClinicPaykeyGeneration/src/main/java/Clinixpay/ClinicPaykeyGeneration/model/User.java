@@ -22,7 +22,7 @@ public class User {
 
     // --- Key Generation Fields ---
     @Indexed(unique = true)
-    private String loginKey;           // Stores the HASHED key for verification
+    private String licensekey;           // Stores the HASHED key for verification
 
     // *** NEW FIELD: Stores the plain key temporarily until payment is verified and email is sent. ***
     // Must be set to null immediately after successful key delivery.

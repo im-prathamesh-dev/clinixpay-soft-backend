@@ -14,5 +14,5 @@ public interface UserRepository extends MongoRepository<User, String> {
 
     // CRITICAL: Used by KeyGeneratorService to ensure the HASH of the generated key is unique.
 
-    Optional<User> findByLoginKey(String loginKey);
+    Optional<User> findByLicensekey(String licenseKey);
 }

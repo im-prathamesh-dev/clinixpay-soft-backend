@@ -1,5 +1,6 @@
 package Clinixpay.ClinicPaykeyGeneration.controller;
 
+import Clinixpay.ClinicPaykeyGeneration.dto.LoginRequest; // <--- NEW IMPORT
 import Clinixpay.ClinicPaykeyGeneration.dto.PaymentResponse;
 import Clinixpay.ClinicPaykeyGeneration.dto.PaymentVerificationRequest;
 import Clinixpay.ClinicPaykeyGeneration.dto.RegistrationRequest;
@@ -113,6 +114,35 @@ public class RegistrationController {
             // Log the fraudulent attempt
             System.err.println("ALERT: Invalid Razorpay Signature detected for Order ID: " + request.getRazorpayOrderId());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Payment verification failed: Invalid Signature.");
+        }
+    }
+
+    /**
+     * 3. NEW ENDPOINT: Validates the user's provided email and license key to grant access.
+     * - URL: POST http://localhost:8081/api/register/validate-license
+     */
+    @PostMapping("/validate-license")
+    public ResponseEntity<?> validateLicense(@Valid @RequestBody LoginRequest request) {
+        try {
+            User user = registrationService.validateUserLicense(request.getEmail(), request.getLicenseKey());
+
+            // Key Validation Successful
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "Key Detected. Access Granted after successful registration.");
+            response.put("keyStatus", user.getKeyStatus());
+            response.put("email", user.getEmail());
+            response.put("plan", user.getSelectedPlan());
+
+            return ResponseEntity.ok(response);
+
+        } catch (IllegalStateException e) {
+            // Validation failed (User not found, key mismatch, or inactive status)
+            // Use 401 Unauthorized since the credentials failed the check
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            // General server error
+            System.err.println("Fatal License Validation error: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "An internal error occurred during validation."));
         }
     }
 

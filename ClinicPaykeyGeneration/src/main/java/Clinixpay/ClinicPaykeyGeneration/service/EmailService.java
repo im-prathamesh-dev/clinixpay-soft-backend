@@ -23,7 +23,7 @@ public class EmailService {
     /**
      * Sends a formal letter upon successful registration with the login key and terms using SMTP.
      */
-    public void sendPaymentSuccessEmail(String toEmail, String fullName, String loginKey, String planName, Long amountPaise) {
+    public void sendPaymentSuccessEmail(String toEmail, String fullName, String licensekey, String planName, Long amountPaise) {
 
         try {
             // 1. Create a MimeMessage for complex content (like HTML)
@@ -33,7 +33,7 @@ public class EmailService {
             // Convert paise back to rupees for the message
             String amountRupees = String.format("%.2f", amountPaise / 100.0);
             String subject = "Payment Successful & Welcome to Clinixpay!";
-            String emailHtmlBody = createHtmlEmailBody(fullName, loginKey, planName, amountRupees);
+            String emailHtmlBody = createHtmlEmailBody(fullName, licensekey, planName, amountRupees);
 
             // 2. Set message properties
             helper.setFrom(fromEmail);
@@ -53,7 +53,7 @@ public class EmailService {
     }
 
     // Helper method to create a professional HTML-formatted email body
-    private String createHtmlEmailBody(String fullName, String loginKey, String planName, String amountRupees) {
+    private String createHtmlEmailBody(String fullName, String licensekey, String planName, String amountRupees) {
         // Use inline styles for maximum compatibility across email clients
         return """
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #ddd; padding: 20px;">
@@ -73,7 +73,7 @@ public class EmailService {
                 
                 <div style="border: 2px solid #FFC107; padding: 15px; text-align: center; margin: 20px 0; background-color: #FFFBEA;">
                     <h3 style="margin-top: 0; color: #333;">Your Secure Login Key</h3>
-                    <p style="font-size: 1.5em; font-weight: bold; color: #FFC107; margin: 5px 0;">""" + loginKey + """
+                    <p style="font-size: 1.5em; font-weight: bold; color: #FFC107; margin: 5px 0;">""" + licensekey + """
                     </p>
                 </div>
                 
